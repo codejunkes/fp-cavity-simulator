@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fabry–Pérot Cavity Simulator</title>
+<meta name="description" content="Browser-based design and noise-budget tool for Fabry–Pérot optical reference cavities: stability, transverse modes, Brownian thermal noise, thermal expansion, thermal shielding and Pound–Drever–Hall locking.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M5 4h4v24H5z' fill='%230a6b80'/%3E%3Cpath d='M23 4h4v24h-4z' fill='%230a6b80'/%3E%3Cpath d='M9 13c5 2 9 2 14 0v6c-5-2-9-2-14 0z' fill='%23c8326a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<link rel="stylesheet" href="assets/css/style.css">
+<script>
+  // apply a stored theme before first paint
+  try { var t = localStorage.getItem('fp-sim-theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <h1>Fabry–Pérot cavity simulator</h1>
+    <p>Resonator design and noise budget for optical reference cavities</p>
+  </div>
+  <div class="actions">
+    <label class="inline" for="example">Example
+      <select id="example" aria-label="Load an example cavity"></select>
+    </label>
+    <button type="button" id="btn-share" title="Copy a link that reproduces the current parameters">Copy link</button>
+    <button type="button" id="btn-save" title="Download all parameters as JSON">Save parameters</button>
+    <button type="button" id="btn-open" title="Load parameters from a JSON file">Open parameters</button>
+    <input type="file" id="file-open" accept=".json,application/json" hidden>
+    <button type="button" id="btn-reset" title="Restore the default parameters">Reset</button>
+    <button type="button" id="btn-theme" aria-label="Switch between light and dark theme">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      <span id="theme-label">Dark</span>
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="rail" id="rail" aria-label="Cavity parameters">
+    <button type="button" class="rail-toggle" id="rail-toggle" aria-expanded="false" aria-controls="rail-body">
+      <span class="rt-title">Cavity parameters</span><span id="rail-summary"></span>
+    </button>
+    <div class="rail-body" id="rail-body">
+      <section class="pgroup">
+        <h2>Geometry</h2>
+        <div class="fields" data-fields="geometry"></div>
+        <div class="preset-row">
+          <label for="geom-preset">Set mirror radii from the length</label>
+          <select id="geom-preset"></select>
+        </div>
+      </section>
+      <section class="pgroup">
+        <h2>Mirrors</h2>
+        <div class="fields" data-fields="mirrors"></div>
+      </section>
+      <section class="pgroup">
+        <h2>Light</h2>
+        <div class="fields" data-fields="light"></div>
+      </section>
+      <section class="pgroup">
+        <h2>Spacer</h2>
+        <div class="fields" data-fields="spacer"></div>
+      </section>
+      <details class="pgroup" open>
+        <summary>Materials</summary>
+        <p class="sub">Spacer</p>
+        <div class="fields" data-fields="mat-spacer"></div>
+        <p class="sub">Mirror substrates</p>
+        <div class="fields" data-fields="mat-mirror"></div>
+        <p class="sub">Reflective coating</p>
+        <div class="fields" data-fields="coating"></div>
+      </details>
+    </div>
+  </aside>
+
+  <main class="bench" id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-head">
+        <h2 id="hero-title">Your cavity</h2>
+        <p class="hero-note" id="hero-note"></p>
+      </div>
+      <svg id="cavity-svg" role="img" aria-label="Cavity schematic"></svg>
+      <dl class="readouts" id="readouts">
+        <div><dt>Free spectral range</dt><dd id="ro-fsr">—</dd></div>
+        <div><dt>Finesse</dt><dd id="ro-finesse">—</dd></div>
+        <div><dt>Linewidth (FWHM)</dt><dd id="ro-fwhm">—</dd></div>
+        <div><dt>Stability g₁g₂</dt><dd id="ro-g">—</dd></div>
+        <div><dt>Waist radius</dt><dd id="ro-w0">—</dd></div>
+        <div><dt>Spot radius on M₁ / M₂</dt><dd id="ro-w12">—</dd></div>
+        <div><dt>Transverse mode spacing</dt><dd id="ro-tms">—</dd></div>
+        <div><dt>Thermal-noise floor σ<sub>y</sub></dt><dd id="ro-floor">—</dd></div>
+      </dl>
+    </section>
+
+    <nav class="tabs" role="tablist" aria-label="Analyses">
+      <button role="tab" id="tab-cavity" aria-controls="panel-cavity" aria-selected="true">Cavity</button>
+      <button role="tab" id="tab-stability" aria-controls="panel-stability" aria-selected="false" tabindex="-1">Stability</button>
+      <button role="tab" id="tab-modes" aria-controls="panel-modes" aria-selected="false" tabindex="-1">Transverse modes</button>
+      <button role="tab" id="tab-noise" aria-controls="panel-noise" aria-selected="false" tabindex="-1">Thermal noise</button>
+      <button role="tab" id="tab-expansion" aria-controls="panel-expansion" aria-selected="false" tabindex="-1">Thermal expansion</button>
+      <button role="tab" id="tab-thermal" aria-controls="panel-thermal" aria-selected="false" tabindex="-1">Temperature control</button>
+      <button role="tab" id="tab-gasrp" aria-controls="panel-gasrp" aria-selected="false" tabindex="-1">Pressure effects</button>
+      <button role="tab" id="tab-pdh" aria-controls="panel-pdh" aria-selected="false" tabindex="-1">PDH locking</button>
+      <button role="tab" id="tab-notes" aria-controls="panel-notes" aria-selected="false" tabindex="-1">Notes</button>
+    </nav>
+
+    <!-- ============================================================ CAVITY -->
+    <section class="panel" id="panel-cavity" role="tabpanel" aria-labelledby="tab-cavity">
+      <header class="panel-head">
+        <h2>Cavity parameters</h2>
+        <p>Resonator, on-resonance power transfer, the TEM₀₀ mode and the round-trip ray matrix, computed from the parameters on the left.</p>
+      </header>
+      <div class="callout" id="cl-cavity"></div>
+      <div class="results" id="res-cavity"></div>
+      <div class="controls"><div class="fields" data-fields="cav-ctrl"></div></div>
+      <div class="figs">
+        <figure class="fig"><figcaption><h3>Airy response over one free spectral range</h3><p>Transmitted and reflected power as the laser is tuned across two adjacent longitudinal resonances.</p></figcaption><div class="plot" id="pl-airy"></div></figure>
+        <figure class="fig"><figcaption><h3>Resonance close-up</h3><p>The full width at half maximum is the cavity linewidth δν = FSR/𝓕.</p></figcaption><div class="plot" id="pl-closeup"></div></figure>
+        <figure class="fig wide"><figcaption><h3>Beam radius along the cavity</h3><p>1/e² intensity radius w(z) of the TEM₀₀ mode between the mirrors.</p></figcaption><div class="plot" id="pl-beam"></div></figure>
+      </div>
+      <details class="method">
+        <summary>Method and changes from the MATLAB version</summary>
+        <h4>Equations</h4>
+        <ul>
+          <li>Free spectral range <span class="eq">FSR = c / (2nL)</span>; amplitude reflectivities <span class="eq">r<sub>i</sub> = √ℛ<sub>i</sub></span>, transmissions <span class="eq">T<sub>i</sub> = 1 − ℛ<sub>i</sub> − loss<sub>i</sub></span>.</li>
+          <li>Finesse from the exact half-maximum condition <span class="eq">𝓕 = π / [2 arcsin((1 − r₁r₂) / (2√(r₁r₂)))]</span>; linewidth <span class="eq">δν = FSR/𝓕</span>.</li>
+          <li>On resonance <span class="eq">T = T₁T₂/(1 − r₁r₂)²</span> and <span class="eq">P<sub>circ</sub>/P<sub>in</sub> = T₁/(1 − r₁r₂)²</span>.</li>
+          <li><span class="eq">g<sub>i</sub> = 1 − L/R<sub>i</sub></span>; spot sizes <span class="eq">w₁² = (λL/πn)·√(g₂ / (g₁(1 − g₁g₂)))</span>, waist <span class="eq">w₀² = (λL/πn)·√(g₁g₂(1 − g₁g₂)) / |g₁ + g₂ − 2g₁g₂|</span> located <span class="eq">z₁ = L g₂(1 − g₁)/(g₁ + g₂ − 2g₁g₂)</span> from M₁ (Siegman, <i>Lasers</i>, ch. 19).</li>
+          <li>One-way Gouy phase <span class="eq">ψ = arccos(sgn(g₁)·√(g₁g₂))</span>.</li>
+          <li>Round-trip ray matrix from M₁: <span class="eq">M = M(R₁)·P(L)·M(R₂)·P(L)</span> with <span class="eq">M(R) = [1, 0; −2/R, 1]</span>; flat mirrors use curvature 1/R = 0, so no Inf arithmetic is needed.</li>
+        </ul>
+        <div class="changed">
+          <h4>Corrected</h4>
+          <ul>
+            <li>FSR was written n·c/(2L); the refractive index belongs in the denominator.</li>
+            <li><code>Output_parameters.m</code> inserted power reflectivities where amplitudes are required, giving 𝓕 = 560 instead of 1120 for ℛ = 0.9972 (and twice the linewidth).</li>
+            <li>The ray-matrix element M₂₁ used the spacer bore radius instead of R₂ (det M = 6.91 instead of 1), and flat mirrors set M₁₁ = 0 instead of its true limit.</li>
+            <li>g was recovered as (|A + D|/2 + 1)/2; the absolute value gives a wrong result whenever g₁g₂ &lt; ½ (a confocal cavity reported g = 1).</li>
+            <li>The tilted-etalon quantity “FSR_angle” with a fixed 0.1 rad tilt was removed: it does not describe a spherical-mirror cavity.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================================================ STABILITY -->
+    <section class="panel" id="panel-stability" role="tabpanel" aria-labelledby="tab-stability" hidden>
+      <header class="panel-head">
+        <h2>Stability</h2>
+        <p>Where your cavity sits on the g₁–g₂ diagram, which lengths are stable for your mirrors, and how sensitive the stability parameter is to small changes.</p>
+      </header>
+      <div class="callout" id="cl-stability"></div>
+      <div class="results" id="res-stability"></div>
+      <div class="figs">
+        <figure class="fig tall"><figcaption><h3>Stability diagram</h3><p>Shaded: 0 &lt; g₁g₂ &lt; 1. The line shows where the cavity moves as L changes with the same mirrors.</p></figcaption><div class="plot" id="pl-gdiagram"></div></figure>
+        <figure class="fig tall"><figcaption><h3>g₁g₂ versus length</h3><p>Stable lengths lie inside the shaded band.</p></figcaption><div class="plot" id="pl-gvsl"></div></figure>
+        <figure class="fig"><figcaption><h3>Mode radius versus length</h3><p>Spot sizes diverge at the edges of each stable range.</p></figcaption><div class="plot" id="pl-wvsl"></div></figure>
+        <figure class="fig"><figcaption><h3>Sensitivity of g₁g₂</h3><p>Change of g₁g₂ for a length change ΔL or a change ΔR₁ of the first mirror radius.</p></figcaption><div class="plot" id="pl-sens"></div></figure>
+      </div>
+      <details class="method">
+        <summary>Method and changes from the MATLAB version</summary>
+        <ul>
+          <li>A two-mirror resonator has a confined Gaussian mode for <span class="eq">0 &lt; g₁g₂ &lt; 1</span>; the boundaries g₁g₂ = 0 and 1 are marginal.</li>
+          <li>With fixed mirrors <span class="eq">g₁g₂(L) = (1 − L/R₁)(1 − L/R₂)</span>, which crosses 0 at L = R₁, R₂ and reaches 1 at L = R₁ + R₂.</li>
+          <li>The change for a length step is evaluated exactly as <span class="eq">−ΔL(1/R₁ + 1/R₂) + (2LΔL + ΔL²)/(R₁R₂)</span>, avoiding the subtraction of nearly equal numbers.</li>
+        </ul>
+        <div class="changed">
+          <h4>Corrected</h4>
+          <ul>
+            <li>The diagram now plots your cavity; the original only drew fixed reference points.</li>
+            <li>Cavity-type presets: “Hemi-spherical” used R = 2L (it is R = L) and “Plane-concave” used R = L/2, which is unstable (g₁g₂ = −1). “Concave-concave” sat on the stability boundary and was replaced by a stable asymmetric example.</li>
+            <li>The sensitivity plots used a hard-coded L = 0.485 m, a hard-coded offset g = 0.515 and R₂ = ∞, and subtracted nearly equal numbers at the 10⁻¹⁶ level; negative results disappeared from the log axes.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================================================ MODES -->
+    <section class="panel" id="panel-modes" role="tabpanel" aria-labelledby="tab-modes" hidden>
+      <header class="panel-head">
+        <h2>Transverse modes</h2>
+        <p>Frequencies and transmission of Hermite–Gauss modes HG<sub>mn</sub> relative to the TEM₀₀ resonance, mode shapes and clipping by the bore.</p>
+      </header>
+      <div class="callout" id="cl-modes"></div>
+      <div class="controls">
+        <h3>Mode orders</h3><div class="fields" data-fields="hom"></div>
+        <h3>Mode pattern</h3><div class="fields" data-fields="hom-pattern"></div>
+        <h3>Length scan</h3><div class="fields" data-fields="hom-sweep"></div>
+      </div>
+      <div class="results" id="res-modes"></div>
+      <div class="figs">
+        <figure class="fig wide"><figcaption><h3>Mode spectrum within one free spectral range</h3><p>Each stem marks the resonance of mode order N = m + n, offset from the TEM₀₀ resonance; its height is the relative transmission while the laser sits on TEM₀₀ (equal coupling assumed).</p></figcaption><div class="plot" id="pl-homspec"></div></figure>
+        <figure class="fig"><figcaption><h3>Relative transmission by mode order</h3><p>Suppression of each order when locked to TEM₀₀.</p></figcaption><div class="plot" id="pl-hombar"></div></figure>
+        <figure class="fig"><figcaption><h3>Suppression versus g₁g₂</h3><p>Relative transmission of orders 1 to N as the cavity geometry changes; dashed line marks your cavity.</p></figcaption><div class="plot" id="pl-homg"></div></figure>
+        <figure class="fig"><figcaption><h3>One mode order versus cavity length</h3><p>Lengths where the chosen order becomes resonant together with TEM₀₀.</p></figcaption><div class="plot" id="pl-homlen"></div></figure>
+        <figure class="fig"><figcaption><h3>Intensity pattern</h3><p>HG<sub>mn</sub> intensity with the real spot size. Solid circle: bore; dashed: TEM₀₀ radius w.</p></figcaption><div class="plot" id="pl-hg"></div></figure>
+        <figure class="fig wide"><figcaption><h3>Mode size versus order</h3><p>Second-moment radius w√(N + 1) at the larger mirror spot and at the waist, compared with the bore and mirror radii.</p></figcaption><div class="plot" id="pl-homsize"></div></figure>
+      </div>
+      <details class="method">
+        <summary>Method and changes from the MATLAB version</summary>
+        <ul>
+          <li>Resonances <span class="eq">ν<sub>q,mn</sub> = FSR·[q + (m + n + 1)·ψ/π]</span>; order N = m + n is offset from TEM₀₀ by <span class="eq">(Nψ/π mod 1)·FSR</span>.</li>
+          <li>Relative transmission at the TEM₀₀ frequency <span class="eq">1 / (1 + F sin²(Nψ))</span>, with the coefficient of finesse <span class="eq">F = 4r₁r₂/(1 − r₁r₂)²</span>.</li>
+          <li>Second-moment radius of order N: <span class="eq">w√(N + 1)</span>; TEM₀₀ power outside an aperture of radius a: <span class="eq">exp(−2a²/w²)</span>.</li>
+        </ul>
+        <div class="changed">
+          <h4>Corrected</h4>
+          <ul>
+            <li>The Gouy phase used arccos(+√(g₁g₂)), which is wrong when g₁, g₂ &lt; 0 — including the default near-concentric cavity — and mirrored every mode frequency inside the FSR.</li>
+            <li>Mode frequencies were folded by adding −1 … −6 FSR, so orders more than 7 FSR away were lost; a proper modulo is used now.</li>
+            <li>A stale stored finesse (2093) was used instead of the value implied by the mirror reflectivities (1120).</li>
+            <li>Mode pictures used hard-coded weights and a normalisation that multiplied instead of divided by √(2<sup>m</sup>m!w₀); mode sizes were fixed at 381/438 µm. Both now follow your cavity.</li>
+            <li>One script read <code>matlab\sankalpa\dt.xlsx</code>, a hard-coded Windows path.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================================================ THERMAL NOISE -->
+    <section class="panel" id="panel-noise" role="tabpanel" aria-labelledby="tab-noise" hidden>
+      <header class="panel-head">
+        <h2>Brownian thermal noise</h2>
+        <p>Length fluctuations of spacer, mirror substrates and coatings from the fluctuation–dissipation theorem, and the flicker floor they set on the laser's frequency stability.</p>
+      </header>
+      <div class="callout" id="cl-noise"></div>
+      <div class="controls"><div class="fields" data-fields="noise"></div></div>
+      <div class="results" id="res-noise"></div>
+      <div class="figs">
+        <figure class="fig"><figcaption><h3>Noise spectral density</h3><p>Amplitude spectral density of each contribution and the total.</p></figcaption><div class="plot" id="pl-asd"></div></figure>
+        <figure class="fig"><figcaption><h3>Where the noise comes from</h3><p>Share of the total length-noise power.</p></figcaption><div class="plot" id="pl-share"></div></figure>
+        <figure class="fig"><figcaption><h3>Material combinations</h3><p>Flicker floor σ<sub>y</sub> for every spacer and substrate pair with your geometry and coating; outlined cell is your choice.</p></figcaption><div class="plot" id="pl-matnoise"></div></figure>
+        <figure class="fig"><figcaption><h3>Floor versus cavity length</h3><p>Mirror radii scaled with L so that g₁ and g₂ stay as they are now.</p></figcaption><div class="plot" id="pl-floorlen"></div></figure>
+      </div>
+      <details class="method">
+        <summary>Method and changes from the MATLAB version</summary>
+        <ul>
+          <li>Spacer <span class="eq">S = (4k<sub>B</sub>T/ω)·L φ<sub>sp</sub> / (E<sub>sp</sub> π(R² − r²))</span> (Kessler et al. 2012, including the bore).</li>
+          <li>Each substrate <span class="eq">S = (4k<sub>B</sub>T/ω)·(1 − σ²) φ<sub>sub</sub> / (√π E w)</span>, w the 1/e² spot radius (Numata et al. 2004).</li>
+          <li>Each coating <span class="eq">S<sub>coat</sub> = S<sub>sub</sub>·(2/√π)·(1 − 2σ)/(1 − σ)·(φ<sub>c</sub>/φ<sub>sub</sub>)·(d/w)</span>, assuming coating elasticity close to the substrate's.</li>
+          <li>Fractional frequency <span class="eq">S<sub>y</sub> = S<sub>x</sub>/L²</span>; for flicker noise the Allan deviation is flat at <span class="eq">σ<sub>y</sub> = √(2 ln2 · f · S<sub>y</sub>(f))</span>.</li>
+        </ul>
+        <div class="changed">
+          <h4>Corrected</h4>
+          <ul>
+            <li>The curve labelled “fractional frequency instability” was √(2 ln2 · S<sub>y</sub>), missing the factor f. It therefore fell as 1/√f and agreed with the true flat floor only at 1 Hz.</li>
+            <li>The legend always read “R₁ = 1 m & R₂ = ∞” regardless of the inputs.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================================================ CTE -->
+    <section class="panel" id="panel-expansion" role="tabpanel" aria-labelledby="tab-expansion" hidden>
+      <header class="panel-head">
+        <h2>Thermal expansion</h2>
+        <p>Effective expansion of the bonded mirror–spacer assembly, the cavity's zero-crossing temperature, and the resulting frequency drift with temperature.</p>
+      </header>
+      <div class="callout" id="cl-expansion"></div>
+      <div class="controls">
+        <h3>Spacer expansion</h3><div class="fields" data-fields="cte-spacer"></div>
+        <h3>Mirror substrate expansion</h3><div class="fields" data-fields="cte-mirror"></div>
+        <h3>Coupling and display</h3><div class="fields" data-fields="cte-general"></div>
+      </div>
+      <div class="results" id="res-expansion"></div>
+      <div class="figs">
+        <figure class="fig"><figcaption><h3>Expansion coefficient versus temperature</h3><p>Spacer, mirror (right axis) and the effective cavity coefficient.</p></figcaption><div class="plot" id="pl-cte"></div></figure>
+        <figure class="fig"><figcaption><h3>Frequency versus temperature</h3><p>Resonance shift relative to the turning point Δν = −ν·ΔL/L.</p></figcaption><div class="plot" id="pl-dnu"></div></figure>
+        <figure class="fig"><figcaption><h3>Frequency change for a temperature excursion</h3><p>|Δν| for an excursion ΔT starting at the operating temperature and at the zero crossing.</p></figcaption><div class="plot" id="pl-dnulog"></div></figure>
+        <figure class="fig"><figcaption><h3>|dν/dT| for material pairs</h3><p>At the operating temperature, with your length, mirror radius and δ.</p></figcaption><div class="plot" id="pl-matcte"></div></figure>
+        <figure class="fig wide"><figcaption><h3>Expansion and mechanical Q of the materials</h3><p>|CTE| at the operating temperature (left) and mechanical quality factor (right).</p></figcaption><div class="plot" id="pl-matprops"></div></figure>
+      </div>
+      <details class="method">
+        <summary>Method and changes from the MATLAB version</summary>
+        <ul>
+          <li>Effective coefficient of a cavity with two bonded mirrors of radius R<sub>m</sub>: <span class="eq">α<sub>eff</sub> = α<sub>s</sub> + 2δ(R<sub>m</sub>/L)(α<sub>m</sub> − α<sub>s</sub>)</span> (Legero, Kessler, Sterr, JOSA B 27, 914, 2010). δ ≈ 0.37 for a 32 mm spacer diameter and approaches 0.49 for wide spacers; ULE rings on the mirror backs bring it close to 0.</li>
+          <li>Zero-crossing glass <span class="eq">α = a(T − T₀) + b(T − T₀)²</span>; fused silica <span class="eq">α ≈ 500 × 10⁻⁹/K + 2.2 × 10⁻⁹/K² · (T − 20 °C)</span>.</li>
+          <li><span class="eq">ΔL/L = ∫α<sub>eff</sub> dT</span> (exact for the polynomial models); <span class="eq">Δν = −ν ΔL/L</span>.</li>
+        </ul>
+        <div class="changed">
+          <h4>Corrected</h4>
+          <ul>
+            <li>The fractional length change was computed as α<sub>eff</sub>·ΔT instead of the integral, twice the correct value near the zero crossing.</li>
+            <li>One script gave the fused-silica mirrors a CTE of 2.2 × 10⁻⁹·ΔT, dropping the 500 × 10⁻⁹/K offset, so the large shift of the zero crossing (−28 K for the default cavity) was missing; the second script used constant values. Both now use one model.</li>
+            <li>dν/dT was divided by (1 + α<sub>eff</sub>T₀) with T₀ in kelvin and lost its sign; the g-factor change used new L for g₁, old L for g₂ and a hard-coded 0.515.</li>
+            <li>The df/dT matrix was a hard-coded table for L = 0.485 m at 1064 nm; it is now computed. The CTE and Q legends were swapped.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================================================ SHIELDS -->
+    <section class="panel" id="panel-thermal" role="tabpanel" aria-labelledby="tab-thermal" hidden>
+      <header class="panel-head">
+        <h2>Temperature control</h2>
+        <p>How a temperature change of the actively stabilised outer shield P1 reaches the passive shields P2, P3 and the cavity, through radiation and conduction in vacuum.</p>
+      </header>
+      <div class="callout" id="cl-thermal"></div>
+      <div class="controls">
+        <h3>Model</h3><div class="fields" data-fields="sh-main"></div>
+        <h3>Step on P1</h3><div class="fields" data-fields="sh-step"></div>
+        <h3>Oscillation on P1</h3><div class="fields" data-fields="sh-sin"></div>
+        <details><summary>Shield surfaces, masses and emissivities</summary><div class="fields" data-fields="sh-geom"></div></details>
+        <details><summary>Conduction through supports</summary><div class="fields" data-fields="sh-cond"></div></details>
+      </div>
+      <div class="results" id="res-thermal"></div>
+      <div class="figs">
+        <figure class="fig"><figcaption><h3>Response to a step on P1</h3><p>Temperatures after P1 jumps to its new set-point at t = 0.</p></figcaption><div class="plot" id="pl-step"></div></figure>
+        <figure class="fig"><figcaption><h3>Attenuation of periodic disturbances</h3><p>Amplitude ratio to P1 versus period; dot marks the chosen period.</p></figcaption><div class="plot" id="pl-atten"></div></figure>
+        <figure class="fig"><figcaption><h3>Response to an oscillation on P1</h3><p>Starting from equilibrium, including the transient.</p></figcaption><div class="plot" id="pl-sin"></div></figure>
+        <figure class="fig"><figcaption><h3>Resulting cavity frequency excursion</h3><p>From the cavity temperature and the thermal-expansion model.</p></figcaption><div class="plot" id="pl-sinnu"></div></figure>
+      </div>
+      <details class="method">
+        <summary>Method and changes from the MATLAB version</summary>
+        <ul>
+          <li>Radiation between an inner body (area A<sub>i</sub>, emissivity ε<sub>i</sub>) and its enclosure (A<sub>o</sub>, ε<sub>o</sub>), linearised: <span class="eq">G = 4σT³ / [1/(A<sub>i</sub>ε<sub>i</sub>) + (1/A<sub>o</sub>)(1/ε<sub>o</sub> − 1)]</span>. Conduction <span class="eq">G = N k A/ℓ</span>. Parallel paths add.</li>
+          <li>Network <span class="eq">C₂Ṫ₂ = G₁₂(T₁ − T₂) + G₂₃(T₃ − T₂)</span>, <span class="eq">C₃Ṫ₃ = G₂₃(T₂ − T₃) + G₃c(T<sub>c</sub> − T₃)</span>, <span class="eq">C<sub>c</sub>Ṫ<sub>c</sub> = G₃c(T₃ − T<sub>c</sub>)</span>, solved exactly with the matrix exponential; periodic attenuation from <span class="eq">(iωI − A)⁻¹B</span>.</li>
+          <li>The cavity's heat capacity and area follow from the spacer and mirror dimensions and the material densities.</li>
+        </ul>
+        <div class="changed">
+          <h4>Corrected</h4>
+          <ul>
+            <li>The “combined” model averaged the radiation-only and conduction-only responses; heat paths in parallel add their conductances. It also used the wrong surface areas for the second stage and a heat capacity of 210 instead of 900 J/(kg·K).</li>
+            <li>The P1 → P3 oscillation used a single pole with τ₁ + τ₂, which overstates the residual swing about 3× at a 50 h period, and its time constants were typed in rather than computed. Coupling back from the inner shield is now included.</li>
+            <li>The axis labelled “fluctuation period” was elapsed time.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================================================ GAS + RP -->
+    <section class="panel" id="panel-gasrp" role="tabpanel" aria-labelledby="tab-gasrp" hidden>
+      <header class="panel-head">
+        <h2>Pressure effects: residual gas and radiation pressure</h2>
+        <p>Two non-thermal effects on the resonance: refractive-index changes of the residual gas, and the push of the circulating light on the mirrors.</p>
+      </header>
+      <div class="callout" id="cl-gasrp"></div>
+      <div class="controls">
+        <h3>Residual gas</h3><div class="fields" data-fields="gas"></div>
+        <h3>Radiation pressure</h3><div class="fields" data-fields="rp"></div>
+      </div>
+      <div class="results" id="res-gasrp"></div>
+      <div class="figs">
+        <figure class="fig"><figcaption><h3>Pressure change</h3><p>Frequency shift (left) and optical path change (right) for a change Δp of the residual-gas pressure.</p></figcaption><div class="plot" id="pl-gas"></div></figure>
+        <figure class="fig"><figcaption><h3>Circulating power</h3><p>Power circulating inside the cavity on resonance.</p></figcaption><div class="plot" id="pl-pcirc"></div></figure>
+        <figure class="fig"><figcaption><h3>Static radiation-pressure shift</h3><p>Resonance shift from the mirror surfaces being pushed outward.</p></figcaption><div class="plot" id="pl-rpshift"></div></figure>
+        <figure class="fig"><figcaption><h3>Radiation-pressure noise</h3><p>Fractional frequency noise from quantum power fluctuations and from laser intensity noise, compared with the thermal noise at 1 Hz.</p></figcaption><div class="plot" id="pl-rpnoise"></div></figure>
+      </div>
+      <details class="method">
+        <summary>Method and changes from the MATLAB version</summary>
+        <ul>
+          <li>Ideal gas: <span class="eq">Δn = 2πα′Δp/(k<sub>B</sub>T)</span> with α′ the static polarisability volume (CRC values); <span class="eq">Δν/ν = −Δn/n</span>.</li>
+          <li>Local compliance of a half-space under a Gaussian load of 1/e² radius w: <span class="eq">χ = (1 − σ²)/(√π E w)</span>. Length change <span class="eq">ΔL = Σχ<sub>i</sub>F<sub>i</sub></span> plus spacer stretch, with <span class="eq">F = (1 + ℛ)P/c</span> on each mirror.</li>
+          <li>Shot noise of the circulating power <span class="eq">S<sub>P</sub> = 2hνP<sub>circ</sub>·(T₁ + T₂ + losses)/(1 − r₁r₂)²</span>; laser intensity noise is passed to the circulating power below the cavity pole. Photothermal effects are not included.</li>
+        </ul>
+        <div class="changed">
+          <h4>Corrected</h4>
+          <ul>
+            <li>The pressure script converted mbar to Pa twice and used α′p/(2k<sub>B</sub>T) instead of 2πα′p/(k<sub>B</sub>T), an 8× overestimate; the temperature was hard-coded to 302.97 K.</li>
+            <li>Reflected and transmitted powers were |E| instead of |E|².</li>
+            <li>The radiation-pressure noise mixed fixed mirrors (𝓕 ≈ 150 000) with a stored finesse of 2093, used a fixed 490 µm beam, and converted white noise with the flicker-noise Allan formula.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================================================ PDH -->
+    <section class="panel" id="panel-pdh" role="tabpanel" aria-labelledby="tab-pdh" hidden>
+      <header class="panel-head">
+        <h2>Pound–Drever–Hall locking</h2>
+        <p>The PDH error signal of your cavity and a time-domain simulation of a laser locked to it with a fast current loop and an optional slow piezo loop.</p>
+      </header>
+      <div class="callout" id="cl-pdh"></div>
+      <div class="controls">
+        <h3>Modulation and detection</h3><div class="fields" data-fields="pdh-mod"></div>
+        <h3>Fast loop (laser current)</h3><div class="fields" data-fields="pdh-fast"></div>
+        <h3>Slow loop (piezo, offloads the fast actuator)</h3><div class="fields" data-fields="pdh-slow"></div>
+        <h3>Simulation</h3><div class="fields" data-fields="pdh-sim"></div>
+        <details><summary>Free-running laser noise</summary><div class="fields" data-fields="pdh-noise"></div></details>
+        <div class="row-actions"><button type="button" class="btn" id="btn-reseed">New noise realisation</button></div>
+      </div>
+      <div class="results" id="res-pdh"></div>
+      <div class="figs">
+        <figure class="fig"><figcaption><h3>Error signal</h3><p>Demodulated signal versus laser detuning; the outer features are the sidebands passing through resonance.</p></figcaption><div class="plot" id="pl-err"></div></figure>
+        <figure class="fig"><figcaption><h3>Error signal near resonance</h3><p>Dashed: linear slope used for the loop gain.</p></figcaption><div class="plot" id="pl-errzoom"></div></figure>
+        <figure class="fig"><figcaption><h3>Reflected power</h3><p>Carrier and sidebands together.</p></figcaption><div class="plot" id="pl-refl"></div></figure>
+        <figure class="fig"><figcaption><h3>Open-loop gain of the fast loop</h3><p>Includes the cavity pole and one sample of delay.</p></figcaption><div class="plot" id="pl-bode"></div></figure>
+        <figure class="fig wide"><figcaption><h3>Lock acquisition</h3><p>Laser detuning from the cavity resonance before and after the loop is engaged, with the corrections applied by each actuator.</p></figcaption><div class="plot" id="pl-lock"></div></figure>
+        <figure class="fig"><figcaption><h3>Error signal and controller outputs</h3><p>Volts at the detector and at each actuator input.</p></figcaption><div class="plot" id="pl-ctrl"></div></figure>
+        <figure class="fig"><figcaption><h3>Frequency noise</h3><p>Free-running and locked detuning noise.</p></figcaption><div class="plot" id="pl-psd"></div></figure>
+      </div>
+      <details class="method">
+        <summary>Method and changes from the MATLAB version</summary>
+        <ul>
+          <li>Reflection coefficient (E. D. Black, Am. J. Phys. 69, 79, 2001, generalised to unequal mirrors): <span class="eq">F = [−r₁ + r₂(ℛ₁ + T₁)e<sup>iφ</sup>] / (1 − r₁r₂e<sup>iφ</sup>)</span>, <span class="eq">φ = 2πΔf/FSR</span>.</li>
+          <li>Fast-modulation error signal <span class="eq">ε = 2√(P<sub>c</sub>P<sub>s</sub>)·Im[F(ω)F*(ω+Ω) − F*(ω)F(ω−Ω)] + 2√(P<sub>s</sub>P<sub>s2</sub>)·Im[F(ω+Ω)F*(ω+2Ω) − F*(ω−Ω)F(ω−2Ω)]</span>; near resonance <span class="eq">ε ≈ −8√(P<sub>c</sub>P<sub>s</sub>)·Δf/δν</span>.</li>
+          <li>The simulation uses the static discriminator after a low-pass at the cavity pole δν/2, a discrete PID with trapezoidal integrator, output clamping and band-limited derivative, and adds the correction one time step later. The piezo loop integrates the current-actuator signal so both actuators do not fight over the same error.</li>
+          <li>Laser noise: two Ornstein–Uhlenbeck processes (slow drift, fast jitter) plus an initial offset, generated in the browser from a seeded random-number generator.</li>
+        </ul>
+        <div class="changed">
+          <h4>Corrected</h4>
+          <ul>
+            <li>r = √(ℛ₁ℛ₂) was inserted as the amplitude reflectivity, so the simulated cavity had half the finesse.</li>
+            <li>The “integrator” was a 40-sample moving average (no steady-state correction). The derivative used uninitialised history, carried the sign error of the C template it came from, and was never added to the output, so K<sub>d</sub> and τ had no effect.</li>
+            <li>Laser noise in Hz was added to an angular frequency in rad/s; the second-order sideband power was read but unused; “lock bandwidth” was a peak-to-peak excursion; the axis labelled µs showed sample numbers.</li>
+            <li>The pre-recorded noise files (<code>.mat</code>) cannot run in a browser; noise with the same character (≈600 kHz slow wander) is generated instead. Gains are now in physical units, so the defaults differ from the old ones.</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <!-- ============================================================ NOTES -->
+    <section class="panel" id="panel-notes" role="tabpanel" aria-labelledby="tab-notes" hidden>
+      <div class="notes">
+        <header class="panel-head">
+          <h2>Notes</h2>
+          <p>How to use the simulator, conventions, and what changed from the MATLAB application.</p>
+        </header>
+        <h3>Using the simulator</h3>
+        <ul>
+          <li>Every result updates as you type. There is no separate “update values” or “simulate” step.</li>
+          <li>Numbers accept scientific notation (<kbd>2.5e-6</kbd>). Type <kbd>inf</kbd> or <kbd>∞</kbd> for a flat mirror.</li>
+          <li>With an input focused, <kbd>↑</kbd> and <kbd>↓</kbd> change the value by 1 %; hold <kbd>Shift</kbd> for 10 %. For reflectivities the step acts on 1 − ℛ.</li>
+          <li>Each plot has PNG, SVG and CSV export below it; hover a plot for zoom and pan.</li>
+          <li><b>Copy link</b> puts all parameters into the address, so a colleague opens exactly your cavity. <b>Save parameters</b> and <b>Open parameters</b> use a JSON file, replacing <code>dt.xlsx</code>. The browser also remembers your last session.</li>
+          <li>Everything runs in your browser; nothing is uploaded.</li>
+        </ul>
+        <h3>Conventions</h3>
+        <ul>
+          <li>Radius of curvature R &gt; 0 for a mirror that is concave towards the cavity, R &lt; 0 for convex, ∞ for flat; <span class="eq">g = 1 − L/R</span>.</li>
+          <li>ℛ is power reflectivity. Mirror loss (absorption plus scatter) is given separately; transmission is 1 − ℛ − loss.</li>
+          <li>Beam radii are 1/e² intensity radii. Spectral densities are one-sided.</li>
+          <li>Material values are typical figures from manufacturer data and the literature; edit them to match your parts.</li>
+        </ul>
+        <h3>Main corrections to the MATLAB version</h3>
+        <table>
+          <thead><tr><th>Quantity (default cavity)</th><th>MATLAB</th><th>Corrected</th></tr></thead>
+          <tbody>
+            <tr><td>Finesse, ℛ = 0.9972 (output panel)</td><td>560</td><td>1120</td></tr>
+            <tr><td>det of round-trip ray matrix</td><td>6.91</td><td>1.000</td></tr>
+            <tr><td>g for a confocal cavity</td><td>1</td><td>0</td></tr>
+            <tr><td>“Plane-concave” preset</td><td>R = L/2 (unstable)</td><td>R = 2L (g₁g₂ = 0.5)</td></tr>
+            <tr><td>Gouy phase, g₁ = g₂ = −0.91</td><td>0.43 rad</td><td>2.71 rad</td></tr>
+            <tr><td>Thermal-noise floor at 0.01 Hz / 100 Hz</td><td>3.4 × 10⁻¹⁵ / 3.4 × 10⁻¹⁷</td><td>3.4 × 10⁻¹⁶ (flat)</td></tr>
+            <tr><td>Zero-crossing shift from fused-silica mirrors</td><td>not modelled</td><td>−28 K</td></tr>
+            <tr><td>ΔL/L 1 K from the zero crossing</td><td>2.4 × 10⁻⁹</td><td>1.2 × 10⁻⁹</td></tr>
+            <tr><td>Residual-gas refractivity per mbar</td><td>8.0× too large</td><td>2πα′Δp/(k<sub>B</sub>T)</td></tr>
+            <tr><td>P3 swing for ±1 K, 50 h on P1</td><td>±0.082 K</td><td>±0.025 K</td></tr>
+            <tr><td>Finesse of the simulated PDH cavity</td><td>560</td><td>1120</td></tr>
+          </tbody>
+        </table>
+        <p>Each tab's “Method” section lists the corrections in its area. The repository's <code>CORRECTIONS.md</code> gives the full list with file names.</p>
+        <h3>References</h3>
+        <ol>
+          <li>A. E. Siegman, <i>Lasers</i> (University Science Books, 1986), ch. 19–21.</li>
+          <li>E. D. Black, “An introduction to Pound–Drever–Hall laser frequency stabilization”, Am. J. Phys. 69, 79 (2001).</li>
+          <li>K. Numata, A. Kemery, J. Camp, “Thermal-noise limit in the frequency stabilization of lasers with rigid cavities”, Phys. Rev. Lett. 93, 250602 (2004).</li>
+          <li>T. Kessler, T. Legero, U. Sterr, “Thermal noise in optical cavities revisited”, J. Opt. Soc. Am. B 29, 178 (2012).</li>
+          <li>T. Legero, T. Kessler, U. Sterr, “Tuning the thermal expansion properties of optical reference cavities with fused silica mirrors”, J. Opt. Soc. Am. B 27, 914 (2010).</li>
+          <li>Y. Levin, “Internal thermal noise in the LIGO test masses: a direct approach”, Phys. Rev. D 57, 659 (1998).</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="footer">
+  <img src="assets/img/iucaa-logo.png" alt="IUCAA" width="35" height="46">
+  <img src="assets/img/pqm-logo.png" alt="Precision and Quantum Measurement lab" width="46" height="46">
+  <p class="credit">Precision and Quantum Measurement lab, IUCAA, Pune. Supported by the Quantum Enabled Science and Technology (QuEST) programme of DST, India. Web version of the MATLAB Fabry–Pérot simulator, with corrected physics.</p>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-text"></span><button type="button" id="toast-undo" hidden>Undo</button></div>
+
+<script src="vendor/plotly-cartesian-3.7.0.min.js"></script>
+<script src="assets/js/physics.js"></script>
+<script src="assets/js/plots.js"></script>
+<script src="assets/js/hero.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
