@@ -93,6 +93,6 @@ The MATLAB code contained errors in the finesse, the free spectral range, the ro
 
 ## Credits
 
-Precision and Quantum Measurement lab, IUCAA, Pune, supported by the Quantum Enabled Science and Technology (QuEST) programme of DST, India. The PDH model builds on the MATLAB script by Suyash Gaikwad (supervisors Dr Staley Johnson and Dr Subhadeep De).
+Precision and Quantum Measurement lab, IUCAA, Pune, supported by the Quantum Enabled Science and Technology (QuEST) programme of DST, India. The original Matlab code is written by Sankalpa Banerjee and Dr Staley Johnson guided by Dr Subhadeep De, The PDH model builds on the MATLAB script by Suyash Gaikwad (supervisors Dr Staley Johnson and Dr Subhadeep De).
 
-No licence file is included; add the licence your group prefers before publishing. Plotly.js is distributed under the MIT licence (`vendor/PLOTLY-LICENSE`).
+Plotly.js is distributed under the MIT licence (`vendor/PLOTLY-LICENSE`).
